@@ -10,7 +10,7 @@ Preprocessing ideas:
 - Image Histogram equlization
 - Data Augmentation
 
-  Models:
+Models:
 
-  - MaskDINO
-  - Classic Unet ?
+- MaskDINO
+- Classic Unet ?
