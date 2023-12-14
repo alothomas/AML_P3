@@ -33,4 +33,4 @@ The model can be trained by running:
 python train_net.py --config-file best_model_config.yaml
 ```
 
-The `best_model_config.yaml` is a config of the best model we trained. Before training don't forget to change output directory in the config file, as well as the starting weights path.
+The `best_model_config.yaml` is a config of the best model we trained. Before starting the training, don't forget to change output directory in the config file, as well as the starting weights path.
