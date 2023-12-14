@@ -3,6 +3,7 @@ AML Course Task 3 2023
 
 
 Preprocessing ideas:
+
     - Resizing
     - Denoising: NLM denoising ? DRUnet as seen in other project ?
     - Normalization
