@@ -19,6 +19,9 @@ def do_submission(model):
     with gzip.open('task3/test.pkl', 'rb') as f:
         data = pickle.load(f)
 
+    #with gzip.open('task3/train.pkl', 'rb') as f:
+    #    pred_data = pickle.load(f)
+
     model.eval()
     predictions_f = []
 
@@ -31,7 +34,7 @@ def do_submission(model):
                 frame = preprocess_image(frame0)
                 outputs = model.forward(frame)
                 #outputs = torch.sigmoid(outputs)
-                prediction = (outputs.cpu().numpy() > 0.1).astype(np.uint8)
+                prediction = (outputs.cpu().numpy() > 0.05).astype(np.uint8)
                 prediction = np.squeeze(prediction, axis=0).transpose(1, 2, 0)
                 prediction = cv2.resize(prediction, (frame0.shape[1], frame0.shape[0]))
 
@@ -47,13 +50,13 @@ def do_submission(model):
                 }
             )
         
-    with gzip.open('task3/submission_pt.pkl', 'wb') as f:
+    with gzip.open('task3/submission_pt4.pkl', 'wb') as f:
         pickle.dump(predictions_f, f, 2)
     
 
 
 model = ResNetUNetMultiTask(n_classes=1).to('cuda')
-model.load_state_dict(torch.load('t_output_dir/model_epoch_8.pth'))
+model.load_state_dict(torch.load('st_output_dir/model_epoch_2.pth'))
 
 do_submission(model)
 

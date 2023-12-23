@@ -48,25 +48,29 @@ class CustomDataset(Dataset):
         mask = cv2.imread(mask_path, 0)
         mask = cv2.resize(mask, (512, 512))
 
-        # Convert to PyTorch tensors with transforms.ToTensor()
-        mask = transforms.ToTensor()(mask)
-        original_image = transforms.ToTensor()(image)
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,)),
+            ])
 
+        original_image = transform(image)
+        mask = transform(mask)
         return original_image, mask
 
 
 # Data Loaders
 train_dataset = CustomDataset('dataset/train', 'dataset/train_gt')
-val_dataset = CustomDataset('dataset/val', 'dataset/val_gt')
+val_dataset = CustomDataset('dataset/val', 'dataset/val_gt2')
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
 
 # Model, Optimizer, and Loss Functions
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = ResNetUNetMultiTask(n_classes=1).to(device)
-model.load_state_dict(torch.load('output_dir/model_epoch_9.pth'))
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0001)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, verbose=True)
+model.load_state_dict(torch.load('output_dir2/model_epoch_1.pth'))
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.00001, weight_decay=0.0001)
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, verbose=True)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 # dice loss
 inpainting_loss_fn = DiceLoss()
 

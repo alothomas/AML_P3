@@ -31,6 +31,10 @@ class CustomDataset(Dataset):
         #inpainted_image, original_image = self.prepare_inpainting(image)
         inpainted_image, original_image = cv2.resize(cv2.imread(image_path.replace('dataset', 'dataset_inp')), (512, 512)), image[:, :, 0]
 
+        original_image = ((image - inpainted_image)[:,:,0]) # > 20 ) * 255
+        original_image = ((original_image > 50) * 255).astype(np.uint8)
+        inpainted_image = image
+
 
         # Convert to PyTorch tensors with transforms.ToTensor()
         rotated_image = transforms.ToTensor()(rotated_image)
@@ -106,7 +110,7 @@ val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = ResNetUNetMultiTask(n_classes=1).to(device)
 # load pretrained model
-model.load_state_dict(torch.load('output_dir2/model_epoch_12.pth'))
+model.load_state_dict(torch.load('output_dir2/model_epoch_1.pth'))
 
 
 # Training Function

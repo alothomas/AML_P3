@@ -11,6 +11,21 @@ import torch.nn.functional as F
 
 from resunetmt import ResNetUNetMultiTask
 
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1.):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, y_pred, y_true):
+        #y_pred = torch.sigmoid(y_pred)   #apply sigmoid to clamp between 0 and 1
+        y_pred = y_pred.view(-1)
+        y_true = y_true.view(-1)
+
+        intersection = (y_pred * y_true).sum()
+        dice = (2. * intersection + self.smooth) / (y_pred.sum() + y_true.sum() + self.smooth)
+
+        return 1 - dice
+
 def ssim(img1, img2, window_size=11, size_average=True):
     """
     Calculate the SSIM (Structural Similarity Index) of two images.
@@ -54,7 +69,7 @@ class CombinedL1SSIMLoss(nn.Module):
         super(CombinedL1SSIMLoss, self).__init__()
         self.alpha = alpha
         self.beta = beta
-        self.l1_loss = nn.L1Loss()
+        self.l1_loss = nn.MSELoss() #nn.L1Loss()
         self.ssim_loss = SSIMLoss(window_size, size_average)
 
     def forward(self, img1, img2):
@@ -76,6 +91,8 @@ class CustomDataset(Dataset):
         image_path = os.path.join(self.image_dir, self.images[idx])
         
         image = cv2.imread(image_path)
+        value = 40 if image.shape[0] > 400 else 20
+        print(value, image.shape)
         #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (512, 512))
 
@@ -83,13 +100,60 @@ class CustomDataset(Dataset):
         #jigsaw_image, jigsaw_label = self.prepare_jigsaw(image)
         inpainted_image, original_image = cv2.resize(cv2.imread(image_path.replace('dataset', 'dataset_inp')), (512, 512)), image[:, :, 0]
 
+        original_image = ((image - inpainted_image)[:,:,0]) # > 20 ) * 255
+        #print(original_image.max(), original_image.min(), image.max(), image.min(), inpainted_image.max(), inpainted_image.min())
+        cv2.imwrite(f'output_dir2/orig.png', original_image)
+        original_image = ((original_image > 50) * 255).astype(np.uint8)
+        inpainted_image = image
+        #print(original_image.shape, inpainted_image.shape)
+        cv2.imwrite(f'output_dir2/orig_bin.png', original_image)
+        # erode and dilate
+        original_image = cv2.erode(original_image/255, np.ones((5,5)))
+        original_image = cv2.dilate(original_image, np.ones((5, 5)))
+        # get top left and bottom right white values of binary mask 
+        nonzero = np.nonzero(original_image)
+        top_left = (np.min(nonzero[0]), np.min(nonzero[1]))
+        bottom_right = (np.max(nonzero[0]), np.max(nonzero[1]))
+        
+        height = bottom_right[0] - top_left[0]
+        width = bottom_right[1] - top_left[1]
+        bbx_h = int(0.9 * height)
+        bbx_w = int(0.3 * width)
+        to_remove = [0, 0]
+        for i in range(5, bbx_w):
+            if np.sum(original_image[top_left[0]:top_left[0]+bbx_h, top_left[1]:top_left[1]+i]) > (bbx_h * i * 0.5):
+                to_remove[0] = i
+            if np.sum(original_image[bottom_right[0]-bbx_h:bottom_right[0], top_left[1]:top_left[1]+i]) > (bbx_h * i * 0.5):
+                to_remove[0] = i
+            if np.sum(original_image[top_left[0]:top_left[0]+bbx_h, bottom_right[1]-i:bottom_right[1]]) > (bbx_h * i * 0.5):
+                to_remove[1] = i
+            if np.sum(original_image[bottom_right[0]-bbx_h:bottom_right[0], bottom_right[1]-i:bottom_right[1]]) > (bbx_h * i * 0.5):
+                to_remove[1] = i
+
+        #original_image[:, :top_left[1]+value] = 0
+        #original_image[:, bottom_right[1]-value-10:] = 0
+        original_image[:, :top_left[1]+to_remove[0]] = 0
+        original_image[:, bottom_right[1]-to_remove[1]:] = 0
+                
+        cv2.imwrite(f'output_dir2/orig_bin_erode_dilate.png', (original_image*255).astype(np.uint8))
+        quit()
+        #print(original_image.max(), original_image.min(), type(original_image), type(original_image[0,0]), image.max(), image.min(), type(image), type(image[0,0,0]))
         # ConveRT TENSORS
         rotated_image = transforms.ToTensor()(rotated_image)
         #jigsaw_image = transforms.ToTensor()(jigsaw_image)
         inpainted_image = transforms.ToTensor()(inpainted_image)
+        # normalize inpainted image
+        inpainted_image = transforms.Normalize((0.5, 0.5, 0.5), (0.5,0.5,0.5))(inpainted_image)
         original_image = transforms.ToTensor()(original_image)
         rotation_label = torch.tensor(rotation_label)
         #jigsaw_label = torch.tensor(jigsaw_label)
+        #print(original_image.shape, inpainted_image.shape)
+        #print(inpainted_image.max(), inpainted_image.min(), original_image.max(), original_image.min())
+        # save original_image
+        #cv2.imwrite(f'output_dir2/orig2.png', original_image[0].numpy()*255)
+        #cv2.imwrite(f'output_dir2/inp2.png', inpainted_image[0].numpy()*255)
+        #quit()
+
 
         return rotated_image, inpainted_image, rotation_label, original_image
 
@@ -156,11 +220,12 @@ val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
 # Model, Optimizer, and Loss Functions
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = ResNetUNetMultiTask(n_classes=1).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.00001, weight_decay=0.0001)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, verbose=True)
+#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
 rotation_loss_fn = nn.CrossEntropyLoss()
 #jigsaw_loss_fn = nn.CrossEntropyLoss()
-inpainting_loss_fn = CombinedL1SSIMLoss(alpha=0.7, beta=0.3) # nn.MSELoss() # MSE caused blurry results
+inpainting_loss_fn = DiceLoss() #nn.MSELoss() # CombinedL1SSIMLoss(alpha=0.9, beta=0.1) # nn.MSELoss() # MSE caused blurry results
 
 
 # Training Function
@@ -303,7 +368,7 @@ val_rot_losses = []
 val_inp_losses = []
 
 # Main Training Loop
-num_epochs = 20
+num_epochs = 10
 for epoch in range(num_epochs):
     train_rot_loss, train_inp_loss = train_one_epoch(epoch)
     scheduler.step(train_inp_loss)
